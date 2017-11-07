@@ -1,6 +1,6 @@
 # Setup
 Clone this repository:
-`git clone https://github.gatech.edu/akumar401/cs6210Project4.git`
+`git clone https://github.gatech.edu/hgupta40/cs6210Project4.git`
 
 # Dependencies 
 **This is same as project 3. So you can skip the rest of this page, if you have the same system on which you developed the previous project**
