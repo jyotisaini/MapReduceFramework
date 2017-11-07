@@ -86,5 +86,5 @@ The Rubric is:
   - `File Sharding source file` - **file_shard.h** containing the source code for file splitting logic. All your data structure and logic for file sharding should be in this file only, no supporting files.
   - `MapReduce Specification source file` - **mapreduce_spec.h** containing the source code for map reduce specification. All your data structure and logic for map reduce specification should be in this file only, no supporting files.
   - Again, if you have used additional supporting source files, don't forget to submit them.
-2. Hand in your folder as a zip file through [T-Square](t-square.gatech.edu)
+2. Hand in your folder as a zip file through T-Square
 
