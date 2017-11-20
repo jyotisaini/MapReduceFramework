@@ -5,23 +5,26 @@ service MasterWorker {
   rpc mapReduce(MasterQuery) returns (WorkerReply) {}
 }
 
+
+message TempFiles { string filename = 1; }
+
+
 message WorkerReply {
   repeated TempFiles tempFiles = 1;
-  bool isDone = 1;
+  bool isDone = 2;
 }
 
 message MasterQuery {
   repeated ShardInfo shard = 1; 
-  int32 outputNum = 1;         
-  string location = 1;          
-  bool isMap = 1;              
-  string userId = 1;           
+  int32 outputNum = 2;         
+  string location = 3;          
+  bool isMap = 4;              
+  string userId = 5;           
 }
 
 message ShardInfo {
   string filename = 1;
-  int32 offStart = 1;
-  int32 offEnd = 1;
+  int32 offStart = 2;
+  int32 offEnd = 3;
 }
 
-message TempFiles { string filename = 1; }
