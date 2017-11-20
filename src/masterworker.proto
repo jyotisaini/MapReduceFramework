@@ -1,3 +1,29 @@
 syntax = "proto3";
 
 package masterworker;
+
+// The masterworker service definition.
+service MasterWorker {
+  rpc mapReduce(MasterQuery) returns (WorkerReply) {}
+}
+
+message WorkerReply {
+  repeated TempFiles temp_files = 1;
+  bool isDone = 2;
+}
+
+message MasterQuery {
+  repeated ShardInfo shard = 1; 
+  int32 outputNum = 2;         
+  string location = 3;          
+  bool isMap = 4;              
+  string userId = 5;           
+}
+
+message ShardInfo {
+  string filename = 1;
+  int32 offStart = 2;
+  int32 offEnd = 3;
+}
+
+message TempFiles { string filename = 1; }
