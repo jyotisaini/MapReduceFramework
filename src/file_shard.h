@@ -16,7 +16,7 @@
      that your master would use for its own bookkeeping and to convey the tasks
    to the workers for mapping */
 struct FileShard {
-  std::unordered_map<std::string, std::pair<std::streampos, std::streampos>>
+  std::unordered_map<std::string, std::pair<std::streampos, std::streampos> >
       shardsMap;
 };
 
