@@ -3,6 +3,10 @@
 #include <mr_task_factory.h>
 #include "mr_tasks.h"
 
+#include "masterworker.grpc.pb.h"
+
+#include <grpc++/grpc++.h>
+#include <grpc/support/log.h>
 
 /* CS6210_TASK: Handle all the task a Worker is supposed to do.
 	This is a big task for this project, will test your understanding of map reduce */
@@ -24,7 +28,8 @@ class Worker {
 /* CS6210_TASK: ip_addr_port is the only information you get when started.
 	You can populate your other class data members here if you want */
 Worker::Worker(std::string ip_addr_port) {
-
+	//establish grpc server connection and wait for master to assign a task.
+	//once received a response from master invoke run.
 }
 
 extern std::shared_ptr<BaseMapper> get_mapper_from_task_factory(const std::string& user_id);

@@ -76,7 +76,7 @@ struct BaseReducerInternal {
 		void emit(const std::string& key, const std::string& val);
 
 		/* NOW you can add below, data members and member functions as per the need of your implementation*/
-    int outputNum
+    int outputNum;
 };
 
 
@@ -98,7 +98,7 @@ inline void BaseReducerInternal::emit(const std::string& key, const std::string&
     myfile << key << " " << val << std::endl;
     myfile.close();
   } else {
-    std::cerr << "Failed to open file " << file << std::endl;
+    std::cerr << "Failed to open file " << outputFile << std::endl;
     exit(-1);
   }
 

@@ -15,11 +15,11 @@ message WorkerReply {
 }
 
 message MasterQuery {
-  repeated ShardInfo shard = 1; 
-  int32 outputNum = 2;         
-  string location = 3;          
-  bool isMap = 4;              
-  string userId = 5;           
+  repeated ShardInfo shard = 1;
+  int32 outputNum = 2;
+  string location = 3;
+  bool isMap = 4;
+  string userId = 5;
 }
 
 message ShardInfo {
