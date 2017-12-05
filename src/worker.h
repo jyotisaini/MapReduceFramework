@@ -1,5 +1,11 @@
 #pragma once
 
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <map>
+
 #include <mr_task_factory.h>
 #include "mr_tasks.h"
 
@@ -8,8 +14,13 @@
 #include <grpc++/grpc++.h>
 #include <grpc/support/log.h>
 
+using namespace std;
 /* CS6210_TASK: Handle all the task a Worker is supposed to do.
 	This is a big task for this project, will test your understanding of map reduce */
+
+extern std::shared_ptr<BaseMapper> get_mapper_from_task_factory(const std::string& user_id);
+extern std::shared_ptr<BaseReducer> get_reducer_from_task_factory(const std::string& user_id);
+
 class Worker {
 
 	public:
@@ -38,7 +49,8 @@ class Worker {
 				: service_(service),
 				cq_(cq),
 				responder_(&ctx_),
-				status_ (CREATE) {
+				status_ (CREATE),
+				mapperInput_ () {
 					proceed();
 
 				}
@@ -50,9 +62,72 @@ class Worker {
 						service_ -> RequestmapReduce(&ctx_, &request_, &responder_, cq_, cq_, this);
 					} else if (status_ == PROCESS) {
 						//TODO: do the processing
+						if (request_.ismap()) {
+							for(int i = 0; i < request_.shard_size(); i++) {
+								std::string fileName = request_.shard(i).filename();
 
+								int offStart = request_.shard(i).offstart();
+								int offEnd = request_.shard(i).offend();
+								
+								std::fstream inputFile(fileName, std::ios::in);
+
+								inputFile.seekg(offStart, std::ios::beg);
+
+								while (!inputFile.eof() || inputFile.tellg() <= offEnd) {
+									std::string input;
+									std::getline(inputFile, input);
+
+									mapperInput_.push_back(input);
+								}
+
+								inputFile.close();
+							}
+
+							std::string userID = request_.userid();
+							auto mapper = get_mapper_from_task_factory(userID);
+							for (vector<string>::iterator i = mapperInput_.begin(); i != mapperInput_.end(); ++i) {
+
+								mapper -> map(*i);
+							}
+							string command = "mkdir ";
+							string filepath = "../test/output/mapper_";
+							string separator = "/";
+							string name = request_.workerid();
+
+							filepath = filepath + name;
+
+							filepath = filepath + separator;
+
+							command = command + filepath;
+
+							system (command.c_str());
+
+							for (map<string, vector<string> >::iterator it = mapper -> impl_ -> buffer.begin(); it != mapper -> impl_ -> buffer.end(); ++it) {
+								string outputFileName = hashKeys(it -> first);
+								string extension = ".txt";
+								outputFileName = outputFileName + extension;
+
+								outputFileName = filepath + outputFileName;
+
+								fstream outputFile(outputFileName, ios::out);
+
+								outputFile << it -> first << endl;
+
+								for (vector<string>::iterator vit = (it -> second).begin(); vit != (it -> second).end(); ++vit) {
+									outputFile << *vit << endl;
+								}
+
+								outputFile.close();
+							}
+
+							reply_.set_directory(filepath);
+						} else {
+
+						}
+							
 						status_ = FINISH;
 						responder_.Finish(reply_, grpc::Status::OK, this);
+						
 					} else {
 						GPR_ASSERT(status_ == FINISH);
 						delete this;
@@ -73,6 +148,14 @@ class Worker {
 				enum CallStatus{CREATE, PROCESS, FINISH};
 
 				CallStatus status_;
+
+
+				std::vector<std::string> mapperInput_;
+
+				std::string hashKeys (const std::string &key) {
+					std::hash<std::string> hashFunction;
+					return std::to_string(hashFunction(const_cast<std::string&> (key)));
+				}
 		};
 
 };
@@ -88,8 +171,7 @@ server_ (nullptr) {
 	
 }
 
-extern std::shared_ptr<BaseMapper> get_mapper_from_task_factory(const std::string& user_id);
-extern std::shared_ptr<BaseReducer> get_reducer_from_task_factory(const std::string& user_id);
+
 
 /* CS6210_TASK: Here you go. once this function is called your woker's job is to keep looking for new tasks 
 	from Master, complete when given one and again keep looking for the next one.
