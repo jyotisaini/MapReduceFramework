@@ -21,15 +21,71 @@ class Worker {
 
 	private:
 		/* NOW you can add below, data members and member functions as per the need of your implementation*/
+		std::string ip_addr_port_;
+		masterworker::MasterWorker::AsyncService asyncService_;
+		std::unique_ptr<grpc::ServerCompletionQueue> cq_;
+		std::unique_ptr<grpc::Server> server_;
+
+
+		
+
+		void handleRPCs();
+
+		class CallData {
+			public:
+
+				CallData(masterworker::MasterWorker::AsyncService * service, grpc::ServerCompletionQueue* cq)
+				: service_(service),
+				cq_(cq),
+				responder_(&ctx_),
+				status_ (CREATE) {
+					proceed();
+
+				}
+
+				void proceed() {
+					if (status_ == CREATE) {
+						status_ = PROCESS;
+
+						service_ -> RequestmapReduce(&ctx_, &request_, &responder_, cq_, cq_, this);
+					} else if (status_ == PROCESS) {
+						//TODO: do the processing
+
+						status_ = FINISH;
+						responder_.Finish(reply_, grpc::Status::OK, this);
+					} else {
+						GPR_ASSERT(status_ == FINISH);
+						delete this;
+					}
+				}
+
+			private: 
+				masterworker::MasterWorker::AsyncService* service_;
+
+				grpc::ServerCompletionQueue * cq_;
+				grpc::ServerContext ctx_;
+				
+				masterworker::MasterQuery request_;
+				masterworker::WorkerReply reply_;
+
+				grpc::ServerAsyncResponseWriter<masterworker::WorkerReply> responder_;
+
+				enum CallStatus{CREATE, PROCESS, FINISH};
+
+				CallStatus status_;
+		};
 
 };
 
 
 /* CS6210_TASK: ip_addr_port is the only information you get when started.
 	You can populate your other class data members here if you want */
-Worker::Worker(std::string ip_addr_port) {
-	//establish grpc server connection and wait for master to assign a task.
-	//once received a response from master invoke run.
+Worker::Worker(std::string ip_addr_port)
+:ip_addr_port_(ip_addr_port),
+asyncService_ (),
+cq_ (nullptr),
+server_ (nullptr) {
+	
 }
 
 extern std::shared_ptr<BaseMapper> get_mapper_from_task_factory(const std::string& user_id);
@@ -43,10 +99,38 @@ extern std::shared_ptr<BaseReducer> get_reducer_from_task_factory(const std::str
 bool Worker::run() {
 	/*  Below 5 lines are just examples of how you will call map and reduce
 		Remove them once you start writing your own logic */ 
-	std::cout << "worker.run(), I 'm not ready yet" <<std::endl;
-	auto mapper = get_mapper_from_task_factory("cs6210");
-	mapper->map("I m just a 'dummy', a \"dummy line\"");
-	auto reducer = get_reducer_from_task_factory("cs6210");
-	reducer->reduce("dummy", std::vector<std::string>({"1", "1"}));
+	// std::cout << "worker.run(), I 'm not ready yet" <<std::endl;
+	// auto mapper = get_mapper_from_task_factory("cs6210");
+	// mapper->map("I m just a 'dummy', a \"dummy line\"");
+	// auto reducer = get_reducer_from_task_factory("cs6210");
+	// reducer->reduce("dummy", std::vector<std::string>({"1", "1"}));
+
+	grpc::ServerBuilder builder;
+
+	builder.AddListeningPort(ip_addr_port_, grpc::InsecureServerCredentials());
+	builder.RegisterService(&asyncService_);
+
+	cq_ = builder.AddCompletionQueue();
+	server_ = builder.BuildAndStart();
+
+	std::cout << "Worker listening on " << ip_addr_port_ << std::endl;
+
+	handleRPCs();
+
 	return true;
+}
+
+
+void Worker::handleRPCs() {
+	new CallData(&asyncService_, cq_.get());
+
+	void * tag;
+	bool ok;
+
+	while (true) {
+		GPR_ASSERT(cq_ -> Next(&tag, &ok));
+
+		GPR_ASSERT(ok);
+		static_cast<CallData *> (tag) -> proceed();
+	}
 }
