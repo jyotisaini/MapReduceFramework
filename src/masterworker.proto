@@ -10,7 +10,8 @@ message TempFiles { string filename = 1; }
 
 message WorkerReply {
   repeated TempFiles tempFiles = 1;
-  bool isDone = 2;
+  string directory = 2;
+  bool isDone = 3;
 }
 
 message MasterQuery {
@@ -19,6 +20,7 @@ message MasterQuery {
   string location = 3;
   bool isMap = 4;
   string userId = 5;
+  string workerId = 6;
 }
 
 message ShardInfo {
