@@ -102,15 +102,15 @@ bool Master::remoteCallMap(const std::string& ip_addr_port, const FileShard& fil
 
   // 1. set grpc query parameters
   MasterQuery query;
-  query.set_isMap(true);
-  query.set_userId(mrSpec.userId);
-  query.set_outputNum(mrSpec.outputNum);
+  query.set_ismap(true);
+  query.set_userid(mrSpec.userId);
+  query.set_outputnum(mrSpec.outputNums);
 
   for (auto& shardmap : file_shard.shardsMap) {
     ShardInfo* shard_info = query.add_shard();
     shard_info->set_filename(shardmap.first);
-    shard_info->set_offStart(static_cast<int>(shardmap.second.first));
-    shard_info->set_offEnd(static_cast<int>(shardmap.second.second));
+    shard_info->set_offstart(static_cast<int>(shardmap.second.first));
+    shard_info->set_offend(static_cast<int>(shardmap.second.second));
   }
 
   // 2. set async grpc service
@@ -138,9 +138,9 @@ bool Master::remoteCallMap(const std::string& ip_addr_port, const FileShard& fil
   std::cout << "receive temp filenames from " << ip_addr_port << std::endl;
   workerStatus[ip_addr_port] = COMPLETE;
   
-  int size = reply.tempFiles_size();  
+  int size = reply.tempfiles_size();  
   for (int i = 0; i < size; ++i) {
-    tempFileName.insert(reply.tempFiles(i).filename());
+    tempFileName.insert(reply.tempfiles(i).filename());
   }
 
   // 4. recover server to available
@@ -175,8 +175,8 @@ bool Master::remoteCallReduce(const std::string& ip_addr_port, const std::string
 
   // 1. set grpc query parameters
   MasterQuery query;
-  query.set_isMap(false);  // reduce procedure
-  query.set_userId(mrSpec.userId);
+  query.set_ismap(false);  // reduce procedure
+  query.set_userid(mrSpec.userId);
   query.set_location(file_name);
 
   // 2. set async grpc service
@@ -202,7 +202,7 @@ bool Master::remoteCallReduce(const std::string& ip_addr_port, const std::string
   }
 
   // 3. finish grpc
-  GPR_ASSERT(reply.is_done());
+  GPR_ASSERT(reply.isdone());
 
   // 4. recover server to available
   workerStatus[ip_addr_port] = IDLE;
