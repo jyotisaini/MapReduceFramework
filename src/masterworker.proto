@@ -1,13 +1,12 @@
 syntax = "proto3";
 
 package masterworker;
+
 service MasterWorker {
   rpc mapReduce(MasterQuery) returns (WorkerReply) {}
 }
 
-
 message TempFiles { string filename = 1; }
-
 
 message WorkerReply {
   repeated TempFiles tempFiles = 1;
