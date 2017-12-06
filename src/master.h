@@ -86,6 +86,8 @@ class Master {
 		bool allTasksProcessed();
 		bool reduceTasksCreated;
 
+		bool hasAllIdleWorkers();
+
 };
 
 
@@ -134,6 +136,9 @@ fileShards_ (file_shards) {
 
 /* CS6210_TASK: Here you go. once this function is called you will complete whole map reduce task and return true if succeeded */
 bool Master::run() {
+
+	system ("mkdir ../test/output/mapper/");
+	system ("mkdir ../test/output/reducer/");
 
 	bool mapDone =  false;
 	bool reduceDone = false;
@@ -203,10 +208,12 @@ bool Master::run() {
 		}
 
 
-		if (getIdleWorker() != -1 && !mapDone)
+		// if (getIdleWorker() != -1 && !mapDone)
+		// 	continue;
+		if (!mapDone && getIdleWorker() != -1 && getFirstPendingShard() != -1 )
 			continue;
 
-		for (int i = 0; i < workerBookKeep_.size() && !mapDone; i++) {
+		for (int i = 0; i < workerBookKeep_.size() && !mapDone && !hasAllIdleWorkers(); i++) {
 			void *tag;
 			bool status;
 			std::cout << "waiting for reply" << std::endl;
@@ -351,10 +358,10 @@ bool Master::run() {
 			if (reduceDone)
 				break;
 
-			if (getIdleWorker() != -1)
+			if (getIdleWorker() != -1 && getFisrtPendingTask() != -1 && !reduceDone)
 				continue;
 
-			for (int i = 0; i < workerBookKeep_.size(); i++) {
+			for (int i = 0; i < workerBookKeep_.size() && !hasAllIdleWorkers(); i++) {
 				
 				void *tag;
 				bool status;
@@ -461,6 +468,16 @@ int Master::getFisrtPendingTask() {
 bool Master::allTasksProcessed() {
 	for (int i = 0; i < reducerTasks_.size(); i++) {
 		if(reducerTasks_[i].progress != COMPLETED) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool Master::hasAllIdleWorkers() {
+	for(int i = 0; i < workerBookKeep_.size(); i++) {
+		if (workerBookKeep_[i].status == INPROCESS) {
 			return false;
 		}
 	}

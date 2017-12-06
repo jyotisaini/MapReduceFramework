@@ -133,7 +133,7 @@ class Worker {
 							cout << "task is reducer" << endl;
 							for (int i = 0; i < request_.keyfiles_size(); i++) {
 								string mappedFileName = request_.keyfiles(i).filename();
-								cout << "filename is " << mappedFileName <<endl;
+								// cout << "filename is " << mappedFileName <<endl;
 								fstream mappedFile(mappedFileName, ios::in);
 								string key;
 
@@ -250,9 +250,6 @@ bool Worker::run() {
 
 	cq_ = builder.AddCompletionQueue();
 	server_ = builder.BuildAndStart();
-
-	system ("mkdir ../test/output/mapper/");
-	system ("mkdir ../test/output/reducer/");
 
 	std::cout << "Worker listening on " << ip_addr_port_ << std::endl;
 
