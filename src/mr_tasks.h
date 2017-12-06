@@ -83,7 +83,7 @@ struct BaseReducerInternal {
 		void emit(const std::string& key, const std::string& val);
 
 		/* NOW you can add below, data members and member functions as per the need of your implementation*/
-    int outputNum;
+    std::map<std::string, std::string> buffer;
 };
 
 
@@ -96,17 +96,19 @@ inline BaseReducerInternal::BaseReducerInternal() {
 /* CS6210_TASK Implement this function */
 inline void BaseReducerInternal::emit(const std::string& key, const std::string& val) {
 	// std::cout << "Dummy emit by BaseReducerInternal: " << key << ", " << val << std::endl;
-  std::hash <std::string> hashFunction;
-  std::string outputFile = "output/temp/reducer/" +
-    std::to_string(hashFunction(const_cast<std::string&>(key)) % outputNum) +
-    ".txt";
-  std::ofstream myfile (outputFile, std::ios::app);
-  if (myfile.is_open()) {
-    myfile << key << " " << val << std::endl;
-    myfile.close();
-  } else {
-    std::cerr << "Failed to open file " << outputFile << std::endl;
-    exit(-1);
-  }
+  // std::hash <std::string> hashFunction;
+  // std::string outputFile = "output/temp/reducer/" +
+  //   std::to_string(hashFunction(const_cast<std::string&>(key)) % outputNum) +
+  //   ".txt";
+  // std::ofstream myfile (outputFile, std::ios::app);
+  // if (myfile.is_open()) {
+  //   myfile << key << " " << val << std::endl;
+  //   myfile.close();
+  // } else {
+  //   std::cerr << "Failed to open file " << outputFile << std::endl;
+  //   exit(-1);
+  // }
+
+  buffer[key] = val;
 
 }

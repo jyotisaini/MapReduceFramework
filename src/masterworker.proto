@@ -21,6 +21,7 @@ message MasterQuery {
   bool isMap = 4;
   string userId = 5;
   string workerId = 6;
+  repeated TempFiles keyFiles = 7;
 }
 
 message ShardInfo {
