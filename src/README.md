@@ -17,7 +17,7 @@
 ## Master:
 
 - The master is the mastermind behind map and reduce
-- In our implementation, the master runs in an "infinite" loop (until the map-reduce task gets over) and picks an idle workre and matches the worker to an unfinished task.
+- In our implementation, the master runs in an "infinite" loop (until the map-reduce task gets over) and picks an idle worker and matches the worker to an unfinished task.
 - The reduce tasks don't begin until the map tasks finish up.
 - The master keeps track of all the file locations where the workers are writing data to and also keeps track of the states of each task assigned to a worker and takes differet actions based on this data.
 - The master decides on the number of reduce tasks based on the required number of output files and number of keys that are to be processed.
