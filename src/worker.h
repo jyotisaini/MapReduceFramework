@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <algorithm>
 
 #include <mr_task_factory.h>
 #include "mr_tasks.h"
@@ -50,7 +51,9 @@ class Worker {
 				cq_(cq),
 				responder_(&ctx_),
 				status_ (CREATE),
-				mapperInput_ () {
+				mapperInput_ (),
+				reducerInput_ (),
+				reducedKeys_ () {
 					proceed();
 
 				}
@@ -62,6 +65,10 @@ class Worker {
 						service_ -> RequestmapReduce(&ctx_, &request_, &responder_, cq_, cq_, this);
 					} else if (status_ == PROCESS) {
 						//TODO: do the processing
+
+						new CallData(service_, cq_);
+
+						std::string userID = request_.userid();
 						if (request_.ismap()) {
 							for(int i = 0; i < request_.shard_size(); i++) {
 								std::string fileName = request_.shard(i).filename();
@@ -73,7 +80,7 @@ class Worker {
 
 								inputFile.seekg(offStart, std::ios::beg);
 
-								while (!inputFile.eof() || inputFile.tellg() <= offEnd) {
+								while (!inputFile.eof() && inputFile.tellg() <= offEnd) {
 									std::string input;
 									std::getline(inputFile, input);
 
@@ -83,14 +90,13 @@ class Worker {
 								inputFile.close();
 							}
 
-							std::string userID = request_.userid();
 							auto mapper = get_mapper_from_task_factory(userID);
 							for (vector<string>::iterator i = mapperInput_.begin(); i != mapperInput_.end(); ++i) {
 
 								mapper -> map(*i);
 							}
 							string command = "mkdir ";
-							string filepath = "../test/output/mapper_";
+							string filepath = "../test/output/mapper/mapper_";
 							string separator = "/";
 							string name = request_.workerid();
 
@@ -103,7 +109,7 @@ class Worker {
 							system (command.c_str());
 
 							for (map<string, vector<string> >::iterator it = mapper -> impl_ -> buffer.begin(); it != mapper -> impl_ -> buffer.end(); ++it) {
-								string outputFileName = hashKeys(it -> first);
+								string outputFileName = it -> first;
 								string extension = ".txt";
 								outputFileName = outputFileName + extension;
 
@@ -122,7 +128,51 @@ class Worker {
 
 							reply_.set_directory(filepath);
 						} else {
+							for (int i = 0; i < request_.keyfiles_size(); i++) {
+								string mappedFileName = request_.keyfiles(i).filename();
 
+								fstream mappedFile(mappedFileName, ios::in);
+								string key;
+
+								mappedFile >> key;
+
+								while (!mappedFile.eof()) {
+									string value;
+									mappedFile >> value;
+
+									reducerInput_[key].push_back(value);
+								}
+							}
+
+							auto reducer = get_reducer_from_task_factory(userID);
+
+							for (auto const& x: reducerInput_) {
+								reducer -> reduce(x.first, x.second);
+							}
+
+							for (auto const& x: reducer -> impl_ -> buffer) {
+								reducedKeys_.push_back(x.first);
+							}
+
+							sort(reducedKeys_.begin(), reducedKeys_.end());
+
+							string filepath = "../test/output/reducer/reducer_";
+							string extension = ".txt";
+							string name = request_.workerid();
+
+							filepath = filepath + name;
+
+							filepath = filepath + extension;
+
+							fstream reducerOutput(filepath, ios::out);
+
+							for (auto const&x: reducedKeys_) {
+								reducerOutput << x << " " << reducer -> impl_ -> buffer[x] << endl;
+							}
+
+							reply_.set_directory(filepath);
+
+							
 						}
 							
 						status_ = FINISH;
@@ -152,10 +202,10 @@ class Worker {
 
 				std::vector<std::string> mapperInput_;
 
-				std::string hashKeys (const std::string &key) {
-					std::hash<std::string> hashFunction;
-					return std::to_string(hashFunction(const_cast<std::string&> (key)));
-				}
+				std::map <string, vector<string> > reducerInput_;
+
+				vector<string> reducedKeys_;
+
 		};
 
 };
@@ -194,6 +244,9 @@ bool Worker::run() {
 
 	cq_ = builder.AddCompletionQueue();
 	server_ = builder.BuildAndStart();
+
+	system ("mkdir ../test/output/mapper/");
+	system ("mkdir ../test/output/reducer/");
 
 	std::cout << "Worker listening on " << ip_addr_port_ << std::endl;
 
