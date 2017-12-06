@@ -99,40 +99,42 @@ bool Master::callRunMapperTask() {
   for (int i = 0; i < fileShards.size(); ++i) {
   	std::cout << "value of i" << i << std::endl;
     std::string idleWorker;
-      do {
-          idleWorker = selectIdleWorker();
-          std::cout << "Looking for Idle worker " << std::endl;    
-      }
-      while (idleWorker.empty());
+	// do {
+		idleWorker = selectIdleWorker();
+		std::cout << "Looking for Idle worker " << "current idleWorker: " << idleWorker << std::endl; 
 
-   std::unique_ptr<MasterWorker::Stub> stub_ = MasterWorker::NewStub(
-   grpc::CreateChannel(idleWorker, grpc::InsecureChannelCredentials()));
+	// } while (idleWorker.empty());
+	if (!idleWorker.empty()) {
+		std::unique_ptr<MasterWorker::Stub> stub_ = MasterWorker::NewStub(
+	   	grpc::CreateChannel(idleWorker, grpc::InsecureChannelCredentials()));
 
-  // 1. set grpc query parameters
-  MasterQuery q;
- 
-  q.set_ismap(true);
-  q.set_workerid(std::to_string(i));
-  q.set_userid(mrSpec.userId);
-  q.set_outputnum(mrSpec.outputNums);
-  query.push_back(std::move(q));
+	  	// 1. set grpc query parameters
+	  	MasterQuery q;
+	 
+	  	q.set_ismap(true);
+	  	q.set_workerid(std::to_string(i));
+		q.set_userid(mrSpec.userId);
+		q.set_outputnum(mrSpec.outputNums);
+		query.push_back(q);
 
-  for (auto& shardmap : fileShards[i].shardsMap) {
-    ShardInfo* shard_info = query[i].add_shard();
-    shard_info->set_filename(shardmap.first);
-    shard_info->set_offstart(static_cast<int>(shardmap.second.first));
-    shard_info->set_offend(static_cast<int>(shardmap.second.second));
-  }
+		for (auto& shardmap : fileShards[i].shardsMap) {
+			ShardInfo* shard_info = query[i].add_shard();
+			shard_info->set_filename(shardmap.first);
+			shard_info->set_offstart(static_cast<int>(shardmap.second.first));
+			shard_info->set_offend(static_cast<int>(shardmap.second.second));
+		}
 
-  // club shards
+	  // club shards
 
-  std::unique_ptr<grpc::ClientAsyncResponseReader<WorkerReply>> rpc(
-      stub_->AsyncmapReduce(&context[i], query[i], &cq));
-  WorkerReplyData replyData;
-  replyData.worker = idleWorker;
-  reply.push_back(replyData);
+		std::unique_ptr<grpc::ClientAsyncResponseReader<WorkerReply> > rpc(
+			stub_->AsyncmapReduce(&context[i], query[i], &cq));
+		WorkerReplyData replyData;
+		replyData.worker = idleWorker;
+		reply.push_back(replyData);
 
-  rpc->Finish(&reply[i].reply, &rpcStatus[i], (void*)&i);
+		rpc->Finish(&reply[i].reply, &rpcStatus[i], (void*)1);
+	}
+	   	
  }
 
  for(int i =0; i < fileShards.size(); i++) {
@@ -145,30 +147,30 @@ bool Master::callRunMapperTask() {
   retTagList[i]= tag;
   GPR_ASSERT(statusList[i]);
 
-  int* shardId = static_cast<int*>(tag);
-  if (!status) {
-    std::cout << "Error. Reassinging  Task " << endl;
+  // int* shardId = static_cast<int*>(tag);
+  // if (!status) {
+  //   std::cout << "Error. Reassinging  Task " << endl;
 
-    workerStatus[reply[*shardId].worker]= IDLE;
-    //reassignTask(shardId);
-  }
+  //   workerStatus[reply[*shardId].worker]= IDLE;
+  //   //reassignTask(shardId);
+  // }
 
  // 3. master receive intermediate file names
- else 
- { 
- 	std::cout << "receive temp filenames from " << std::endl;
-    workerStatus[reply[*shardId].worker] = COMPLETE;
+ // else 
+ // { 
+ // 	std::cout << "receive temp filenames from " << std::endl;
+ //    workerStatus[reply[*shardId].worker] = COMPLETE;
   
-   std::string dirPath = reply[*shardId].reply.directory(); 
-   DIR *dir;
-   struct dirent *ent;
-   if((dir = opendir(dirPath.c_str()))!= NULL){
-   	 while((ent = readdir(dir))!= NULL)
-   	 	tempFileName.push_back(std::move(ent->d_name));
-   }
- }
-  // tempfile.sort 
-  std::sort (tempFileName.begin(), tempFileName.end());
+ //   std::string dirPath = reply[*shardId].reply.directory(); 
+ //   DIR *dir;
+ //   struct dirent *ent;
+ //   if((dir = opendir(dirPath.c_str()))!= NULL){
+ //   	 while((ent = readdir(dir))!= NULL)
+ //   	 	tempFileName.push_back(std::move(ent->d_name));
+ //   }
+ // }
+ //  // tempfile.sort 
+ //  std::sort (tempFileName.begin(), tempFileName.end());
 
  // 4. recover server to available
   workerStatus[reply[i].worker] = IDLE;
