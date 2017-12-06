@@ -67,7 +67,7 @@ class Worker {
 						std::string userID = request_.userid();
 
 						cout << "userID: " << userID << endl;
-						cout << request_.shard(0).offstart() << endl;
+						// cout << request_.shard(0).offstart() << endl;
 						if (request_.ismap()) {
 							cout << "task is mapper" << endl;
 							for(int i = 0; i < request_.shard_size(); i++) {
@@ -123,6 +123,8 @@ class Worker {
 									outputFile << *vit << endl;
 								}
 
+								outputFile.flush();
+
 								outputFile.close();
 							}
 
@@ -131,7 +133,7 @@ class Worker {
 							cout << "task is reducer" << endl;
 							for (int i = 0; i < request_.keyfiles_size(); i++) {
 								string mappedFileName = request_.keyfiles(i).filename();
-
+								cout << "filename is " << mappedFileName <<endl;
 								fstream mappedFile(mappedFileName, ios::in);
 								string key;
 
@@ -170,6 +172,9 @@ class Worker {
 							for (auto const&x: reducedKeys_) {
 								reducerOutput << x << " " << reducer -> impl_ -> buffer[x] << endl;
 							}
+
+							reducerOutput.flush();
+							reducerOutput.close();
 
 							reply_.set_directory(filepath);
 
