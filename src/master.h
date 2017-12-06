@@ -2,254 +2,292 @@
 
 #include <grpc++/grpc++.h>
 #include <grpc/support/log.h>
-#include <unistd.h>
-#include <unordered_set>
 #include <dirent.h>
-#include "file_shard.h"
-#include "mapreduce_spec.h"
+#include <map>
+#include <vector>
+
 #include "masterworker.grpc.pb.h"
-#include "smart_ptrs.h"
-#include "thread_pool.h"
 
-using masterworker::MasterWorker;
-using masterworker::MasterQuery;
-using masterworker::WorkerReply;
-using masterworker::ShardInfo;
-using masterworker::TempFiles;
+#include "mapreduce_spec.h"
+#include "file_shard.h"
 
-enum WORKER_STATUS {
-  IDLE,
-  INPROCESS,
-  COMPLETE,
-};
 
+/* CS6210_TASK: Handle all the bookkeeping that Master is supposed to do.
+	This is probably the biggest task for this project, will test your understanding of map reduce */
 class Master {
-public:
-  Master(const MapReduceSpec&, const std::vector<FileShard>&);
-  bool run();
 
-private:
+	public:
+		/* DON'T change the function signature of this constructor */
+		Master(const MapReduceSpec&, const std::vector<FileShard>&);
 
-  bool callRunMapperTask();
-  bool callRunReducerTask();
-  bool remoteCallMap( const std::string& ip_addr_port, const FileShard& file_shard, int i);
-  bool remoteCallReduce(const std::string& ip_addr_port, const std::string& file_name);
-  std::string selectIdleWorker();
+		/* DON'T change this function's signature */
+		bool run();
 
-  MapReduceSpec mrSpec;
-  std::vector<FileShard> fileShards;
+	private:
+		/* NOW you can add below, data members and member functions as per the need of your implementation*/
+		MapReduceSpec mr_spec_;
+		std::vector<FileShard> fileShards_;
+		std::vector<std::unique_ptr<masterworker::MasterWorker::Stub> > stub_;
 
-  // worker status: IDLE, INPROCESS
-  std::unordered_map<std::string, WORKER_STATUS> workerStatus;
+		enum workerStatus {
+			IDLE,
+			COMPLETE,
+			INPROCESS,
+		};
 
-  // save temp filenames from workers
-  std::vector<std::string> tempFileName;
+		enum shardProgress {
+			PENDING,
+			PROCESSING,
+			COMPLETED,
+		};
 
-  // master built-in thread pool
-  std::unique_ptr<ThreadPool> threadPool;
+		typedef struct WorkerState {
+			std::string workerID;
+			workerStatus status;
+		} WorkerState;
 
-  std::mutex mutex;
-  std::mutex mutexTask;
+		typedef struct ShardStatus {
+			FileShard shard;
+			std::string workerID;
+			masterworker::MasterQuery query;
+			shardProgress progress;
+			
+		} ShardStatus;
 
-  // notify when all map task have been done
-  int count_;
-  std::condition_variable notEmpty;
+		typedef struct ReplyBookKeep {
+			masterworker::WorkerReply reply;
+			ShardStatus* shard;
+		}ReplyBookKeep;
+
+		std::vector<ShardStatus> shardBookKeep_;
+		std::vector<WorkerState> workerBookKeep_;
+
+		int getIdleWorker();
+		int getFirstPendingShard();
+
+		std::map <std::string, std::vector <std::string> > mapperFiles_;
+
+		bool allShardsProcessed();
+		std::string extractKeyFromDirectory(std::string);
+
+		int getWorkerIndexOfWorker(std::string);
+
 };
 
-/* CS6210_TASK: This is all the information your master will get from the
-   framework.
-        You can populate your other class data members here if you want */
-Master::Master(const MapReduceSpec& mr_spec, const std::vector<FileShard>& file_shards) {
-  threadPool = make_unique<ThreadPool>(mr_spec.workerNums);
-  mrSpec = mr_spec;
-  fileShards = std::move(file_shards);
 
-  for (auto& work_addr : mr_spec.workerAddrs) {
-    workerStatus[work_addr] = IDLE;
-  }
-}
+/* CS6210_TASK: This is all the information your master will get from the framework.
+	You can populate your other class data members here if you want */
+Master::Master(const MapReduceSpec& mr_spec, const std::vector<FileShard>& file_shards)
+: mr_spec_(mr_spec),
+fileShards_ (file_shards) {
+	std::cout << "master constructor called" << std::endl;
+	for (int i = 0; i < fileShards_.size(); i++) {
+		ShardStatus status;
+		status.shard = fileShards_[i];
+		status.workerID = "";
+		
+		masterworker::MasterQuery query;
 
-inline std::string Master::selectIdleWorker() {
-  for (auto& work_addr : mrSpec.workerAddrs) {
-    if (workerStatus[work_addr] == IDLE) {
-      workerStatus[work_addr] = INPROCESS;
-      return work_addr;
-    }
-  }
-  return "";
-}
+		for (auto &shardMap : status.shard.shardsMap) {
+			masterworker::ShardInfo* info = query.add_shard();
 
-typedef struct WorkerReplyData {
-std::string worker;
-WorkerReply reply;
-} WorkerReplyData;
-
-bool Master::callRunMapperTask() {
-  count_ = fileShards.size();
-
-  std::vector<WorkerReplyData> reply(fileShards.size());
-  std::vector<grpc::ClientContext> context(fileShards.size());
-  grpc::CompletionQueue cq;
-  grpc::Status rpcStatus[fileShards.size()];
-  std::vector< MasterQuery> query(fileShards.size());
-  std::vector<bool> statusList(fileShards.size());
-  std::vector<void*> retTagList(fileShards.size());
-
-
-  for (int i = 0; i < fileShards.size(); ++i) {
-  	std::cout << "value of i" << i << std::endl;
-    std::string idleWorker;
-	// do {
-		idleWorker = selectIdleWorker();
-		std::cout << "Looking for Idle worker " << "current idleWorker: " << idleWorker << std::endl; 
-
-	// } while (idleWorker.empty());
-	if (!idleWorker.empty()) {
-		std::unique_ptr<MasterWorker::Stub> stub_ = MasterWorker::NewStub(
-	   	grpc::CreateChannel(idleWorker, grpc::InsecureChannelCredentials()));
-
-	  	// 1. set grpc query parameters
-	  	MasterQuery q;
-	 
-	  	q.set_ismap(true);
-	  	q.set_workerid(std::to_string(i));
-		q.set_userid(mrSpec.userId);
-		q.set_outputnum(mrSpec.outputNums);
-		query.push_back(q);
-
-		for (auto& shardmap : fileShards[i].shardsMap) {
-			ShardInfo* shard_info = query[i].add_shard();
-			shard_info->set_filename(shardmap.first);
-			shard_info->set_offstart(static_cast<int>(shardmap.second.first));
-			shard_info->set_offend(static_cast<int>(shardmap.second.second));
+			info -> set_offstart(static_cast<int> (shardMap.second.first));
+			info -> set_offend(static_cast<int> (shardMap.second.second));
+			info -> set_filename(shardMap.first);
 		}
 
-	  // club shards
+		query.set_userid(mr_spec_.userId);
+		query.set_ismap(true);
+		query.set_workerid(std::to_string(i));
 
-		std::unique_ptr<grpc::ClientAsyncResponseReader<WorkerReply> > rpc(
-			stub_->AsyncmapReduce(&context[i], query[i], &cq));
-		WorkerReplyData replyData;
-		replyData.worker = idleWorker;
-		reply.push_back(replyData);
+		status.query = query;
 
-		rpc->Finish(&reply[i].reply, &rpcStatus[i], (void*)1);
+		status.progress = PENDING;
+
+		shardBookKeep_.push_back(status);
 	}
-	   	
- }
 
- for(int i =0; i < fileShards.size(); i++) {
+	for (int i = 0; i < mr_spec_.workerAddrs.size(); i++) {
+		WorkerState state;
+		state.workerID = mr_spec_.workerAddrs[i];
+		state.status = IDLE;
 
-  void* tag;
-  bool status = false;
-  std::cout << "waiting for reply" << std::endl;
-  GPR_ASSERT(cq.Next(&tag, &status));
-  statusList[i] = status;
-  retTagList[i]= tag;
-  GPR_ASSERT(statusList[i]);
-
-  // int* shardId = static_cast<int*>(tag);
-  // if (!status) {
-  //   std::cout << "Error. Reassinging  Task " << endl;
-
-  //   workerStatus[reply[*shardId].worker]= IDLE;
-  //   //reassignTask(shardId);
-  // }
-
- // 3. master receive intermediate file names
- // else 
- // { 
- // 	std::cout << "receive temp filenames from " << std::endl;
- //    workerStatus[reply[*shardId].worker] = COMPLETE;
-  
- //   std::string dirPath = reply[*shardId].reply.directory(); 
- //   DIR *dir;
- //   struct dirent *ent;
- //   if((dir = opendir(dirPath.c_str()))!= NULL){
- //   	 while((ent = readdir(dir))!= NULL)
- //   	 	tempFileName.push_back(std::move(ent->d_name));
- //   }
- // }
- //  // tempfile.sort 
- //  std::sort (tempFileName.begin(), tempFileName.end());
-
- // 4. recover server to available
-  workerStatus[reply[i].worker] = IDLE;
- }
-
-  return true;
+		workerBookKeep_.push_back(state);
+	}
 }
 
-bool Master::callRunReducerTask() {
-  count_ = tempFileName.size();
-  for (auto& temp_input : tempFileName) {
-    threadPool->AddTask([&]() {
-      std::string idleWorker;
-      do {
-        {
-          std::lock_guard<std::mutex> lock(mutex);
-          idleWorker = selectIdleWorker();
-        }
-      } while (idleWorker.empty());
-      // map function ...
-      remoteCallReduce(idleWorker, temp_input);
-      notEmpty.notify_one();
-    });
-  }
 
-  return true;
-}
-
-bool Master::remoteCallReduce(const std::string& ip_addr_port, const std::string& file_name) {
-  std::unique_ptr<MasterWorker::Stub> stub_ = MasterWorker::NewStub(
-      grpc::CreateChannel(ip_addr_port, grpc::InsecureChannelCredentials()));
-
-  // 1. set grpc query parameters
-  MasterQuery query;
-  query.set_ismap(false);  // reduce procedure
-  query.set_userid(mrSpec.userId);
-  query.set_location(file_name);
-
-  // 2. set async grpc service
-  WorkerReply reply;
-  grpc::ClientContext context;
-  grpc::CompletionQueue cq;
-  grpc::Status status;
-
-  std::unique_ptr<grpc::ClientAsyncResponseReader<WorkerReply>> rpc(
-      stub_->AsyncmapReduce(&context, query, &cq));
-
-  rpc->Finish(&reply, &status, (void*)1);
-  void* got_tag;
-  bool ok = false;
-  GPR_ASSERT(cq.Next(&got_tag, &ok));
-  GPR_ASSERT(got_tag == (void*)1);
-  GPR_ASSERT(ok);
-
-  if (!status.ok()) {
-    std::cout << status.error_code() << ": " << status.error_message()
-              << std::endl;
-    return false;
-  }
-
-  // 3. finish grpc
-  GPR_ASSERT(reply.isdone());
-
-  // 4. recover server to available
-  workerStatus[ip_addr_port] = IDLE;
-
-  return true;
-}
-
-/* CS6210_TASK: Here you go. once this function is called you will complete
- * whole map reduce task and return true if succeeded */
+/* CS6210_TASK: Here you go. once this function is called you will complete whole map reduce task and return true if succeeded */
 bool Master::run() {
-  GPR_ASSERT(callRunMapperTask());
-  // for simplicity, once all map tasks done, reduce will start to execution
-  std::unique_lock<std::mutex> lock(mutexTask);
-  notEmpty.wait(lock, [this] { return --count_ == 1; });
-  GPR_ASSERT(callRunReducerTask());
-  notEmpty.wait(lock, [this] { return --count_ == 1; });
-  std::cout << "map reduce job done .........." << std::endl;
 
-  return true;
+	bool mapDone =  false;
+	bool reduceDone = false;
+	while(1) {
+		std::cout << "outer while loop" << std::endl;
+		std::vector<ReplyBookKeep> replyVector (workerBookKeep_.size());
+
+		std::vector<bool> statusList (workerBookKeep_.size());
+
+		grpc::Status rpcStatus[workerBookKeep_.size()];
+
+		grpc::CompletionQueue cq;
+
+		for (int i = 0; i < workerBookKeep_.size(); i++) {
+			std::cout << "creating stubs" << std::endl;
+			std::shared_ptr<grpc::Channel> channel(grpc::CreateChannel(workerBookKeep_[i].workerID, 
+				grpc::InsecureChannelCredentials()));
+			std::unique_ptr<masterworker::MasterWorker::Stub> 
+				stub(masterworker::MasterWorker::NewStub(channel));
+
+			stub_.push_back(std::move(stub));
+		}
+			
+		while (1) {
+
+			std::cout<< "inner while loop" << std::endl;
+			int workerIndex = getIdleWorker();
+
+			if(workerIndex == -1)
+				break;
+			int shardIndex = getFirstPendingShard();
+			if(shardIndex==-1){
+				std::cout << "shards processed? " << (allShardsProcessed()?"YES": "NO") << std::endl;
+				if (allShardsProcessed()) {
+					mapDone=true;
+            		
+				}
+				break;
+            	
+			}
+
+			grpc::ClientContext clientContext;
+
+			ShardStatus* currentProcessingShard = &shardBookKeep_[shardIndex];
+			WorkerState* currentWorker = &workerBookKeep_[workerIndex];
+
+			std::cout << "current shard status is processing before: " << ((currentProcessingShard -> progress == PROCESSING) ? "yes" : "no") << std::endl;
+
+			currentProcessingShard -> workerID = currentWorker -> workerID;
+			currentProcessingShard -> progress = PROCESSING;
+			currentWorker -> status = INPROCESS;
+
+
+			replyVector[workerIndex].shard = &shardBookKeep_[shardIndex];
+
+			std::cout << "currentProcessingShard :: " << shardIndex << std::endl;
+			std::cout << "current shard status is processing: " << ((currentProcessingShard -> progress == PROCESSING) ? "yes" : "no") << std::endl;
+
+            std::unique_ptr<grpc::ClientAsyncResponseReader<masterworker::WorkerReply> > rpc (stub_[workerIndex] -> AsyncmapReduce(&clientContext, currentProcessingShard -> query, &cq));
+
+			rpc -> Finish(&(replyVector[workerIndex].reply), &rpcStatus[workerIndex], (void*) &replyVector[workerIndex]);
+
+
+		}
+
+		if (mapDone)
+			break;
+
+		if (getIdleWorker() != -1)
+			continue;
+
+		for (int i = 0; i < workerBookKeep_.size(); i++) {
+			void *tag;
+			bool status;
+			std::cout << "waiting for reply" << std::endl;
+			GPR_ASSERT(cq.Next(&tag, &status));
+			statusList[i] =status;
+			GPR_ASSERT(statusList[i]);
+		    ReplyBookKeep* replyVector = (ReplyBookKeep*) tag;
+
+			if(status) {
+				std::cout << "Received Reply from Worker " << std::endl;
+				replyVector -> shard -> progress=COMPLETED;
+
+				std::string workerIP = replyVector -> shard -> workerID;
+				int workerIndex = getWorkerIndexOfWorker(workerIP);
+				workerBookKeep_[workerIndex].status = COMPLETE;
+
+				std::string dirPath = replyVector -> reply.directory();
+				std::cout << "reply received: " << dirPath << std::endl;
+				DIR *dir;
+				struct dirent *ent;
+				if((dir = opendir(dirPath.c_str()))!= NULL){
+					while((ent=readdir(dir))!=NULL) {
+						std::string file (ent -> d_name);
+						if (file.compare (".") == 0 || file.compare("..") == 0)
+							continue;
+						
+						std::string key = file.substr(file.length() - 4);
+						mapperFiles_[key].push_back(dirPath + file);
+
+					}
+				}
+
+				workerBookKeep_[workerIndex].status = IDLE;	
+
+			} else  {
+				//set worker IDLE
+			}
+
+			
+		}
+		//reduce stuff
+
+
+	}
+	return true;
+}
+
+int Master::getIdleWorker() {
+	for(int i = 0; i < workerBookKeep_.size(); i++) {
+		if(workerBookKeep_[i].status == IDLE) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+int Master::getFirstPendingShard() {
+	for(int i =0 ; i<shardBookKeep_.size(); i++) {
+		if(shardBookKeep_[i].progress==PENDING)
+			return i;
+	}
+
+	return -1;
+
+}
+
+bool Master::allShardsProcessed() {
+	for(int i = 0; i < shardBookKeep_.size(); i++) {
+		if (shardBookKeep_[i].progress != COMPLETED) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+std::string Master::extractKeyFromDirectory(std::string directory) {
+	int lastIndex = directory.length() - 1;
+	while(directory.at(lastIndex) != '/') {
+		lastIndex--;
+	}
+	lastIndex++;
+
+	std::string fileName = directory.substr(lastIndex);
+
+	fileName = fileName.substr(0, fileName.length() - 4);
+
+	return fileName;
+}
+
+int Master::getWorkerIndexOfWorker(std::string worker) {
+	for (int i = 0; i < workerBookKeep_.size(); i++) {
+		if (workerBookKeep_[i].workerID.compare(worker) == 0) {
+			return i;
+		}
+	}
+
+	return -1;
 }

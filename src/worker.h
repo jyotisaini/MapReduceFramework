@@ -50,10 +50,7 @@ class Worker {
 				: service_(service),
 				cq_(cq),
 				responder_(&ctx_),
-				status_ (CREATE),
-				mapperInput_ (),
-				reducerInput_ (),
-				reducedKeys_ () {
+				status_ (CREATE) {
 					proceed();
 
 				}
@@ -65,11 +62,14 @@ class Worker {
 						service_ -> RequestmapReduce(&ctx_, &request_, &responder_, cq_, cq_, this);
 					} else if (status_ == PROCESS) {
 						//TODO: do the processing
-
 						new CallData(service_, cq_);
 
 						std::string userID = request_.userid();
+
+						cout << "userID: " << userID << endl;
+						cout << request_.shard(0).offstart() << endl;
 						if (request_.ismap()) {
+							cout << "task is mapper" << endl;
 							for(int i = 0; i < request_.shard_size(); i++) {
 								std::string fileName = request_.shard(i).filename();
 
@@ -128,6 +128,7 @@ class Worker {
 
 							reply_.set_directory(filepath);
 						} else {
+							cout << "task is reducer" << endl;
 							for (int i = 0; i < request_.keyfiles_size(); i++) {
 								string mappedFileName = request_.keyfiles(i).filename();
 
@@ -150,8 +151,8 @@ class Worker {
 								reducer -> reduce(x.first, x.second);
 							}
 
-							for (auto const& x: reducer -> impl_ -> buffer) {
-								reducedKeys_.push_back(x.first);
+							for (map<string, string>::iterator iter = reducer->impl_->buffer.begin(); iter != reducer->impl_->buffer.end(); ++iter) {
+								reducedKeys_.push_back(iter -> first);
 							}
 
 							sort(reducedKeys_.begin(), reducedKeys_.end());
@@ -263,9 +264,12 @@ void Worker::handleRPCs() {
 	bool ok;
 
 	while (true) {
+		cout << "waiting for task" << endl;
 		GPR_ASSERT(cq_ -> Next(&tag, &ok));
 
 		GPR_ASSERT(ok);
+
+		cout << "got task" << endl;
 		static_cast<CallData *> (tag) -> proceed();
 	}
 }
