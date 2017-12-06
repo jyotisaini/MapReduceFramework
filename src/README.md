@@ -38,6 +38,7 @@
 ## Workers:
 
 - The workers just wait on a grpc completion queue in order to consume incoming requests and process them.
+- There is a flag in the request that determines whether the worker should act as a mapper or reducer based on which the worker undergoes different control paths.
 
 ### Mapper:
 
