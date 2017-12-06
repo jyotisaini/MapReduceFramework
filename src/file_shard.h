@@ -18,6 +18,7 @@
 struct FileShard {
   std::unordered_map<std::string, std::pair<std::streampos, std::streampos> >
       shardsMap;
+      size_t totalShardSize;
 };
 
 /// return total input files size in bytes
@@ -51,6 +52,7 @@ inline bool shard_files(const MapReduceSpec& mr_spec,
                         std::vector<FileShard>& fileShards) {
   uint64_t totalSize = get_total_size(mr_spec);
   size_t shardNums = std::ceil(totalSize / (mr_spec.mapSize * 1024.0)) + 1;
+  size_t previousShardSize = mr_spec.mapSize * 1024.0;
   fileShards.reserve(shardNums);
   std::streampos size = mr_spec.mapSize * 1024.0;
 
@@ -61,7 +63,6 @@ inline bool shard_files(const MapReduceSpec& mr_spec,
     std::cout << "\nSplit file : " << input << " " << fileSize
               << " Bytes into shards ...\n";
     std::streampos offset = 0;
-    uint64_t restSize = fileSize;
     while(true) {
       
       myfile.seekg(offset, std::ios::beg);
@@ -81,29 +82,80 @@ inline bool shard_files(const MapReduceSpec& mr_spec,
         myfile.seekg(0,std::ios::end);
         end = myfile.tellg();
         size = (size - (end-begin));
-        FileShard temp;
-        temp.shardsMap[input] = make_pair(begin, end);
-        fileShards.push_back(std::move(temp));
-        size_t chunkSize = (end - begin);
-        std::cout << "Process offset (" << begin << "," << end << ") "
+        if(previousShardSize == mr_spec.mapSize * 1024.0) {
+          FileShard temp;
+          size_t chunkSize = (end - begin);
+          temp.shardsMap[input] = make_pair(begin, end);
+          temp.totalShardSize = chunkSize;
+          previousShardSize = chunkSize;
+
+          //std::cout << "previousShard size ::" << previousShardSize << std::endl;
+          fileShards.push_back(std::move(temp));
+      
+          std::cout << "Process offset (" << begin << "," << end << ") "
                 << chunkSize/1024 << " KBs into shard ...\n";
+
+        }
+        else
+        {
+          FileShard previousShard = fileShards.back();
+          previousShard.shardsMap[input] = make_pair(begin, end);
+          size_t chunkSize = (end - begin);
+          previousShard.totalShardSize = previousShard.totalShardSize + chunkSize;
+          previousShardSize = previousShard.totalShardSize ;
+
+          fileShards.pop_back();
+          fileShards.push_back(previousShard);
+
+          std::cout << "Process offset (" << begin << "," << end << ") "
+                << chunkSize/1024 << " KBs into shard ...\n";
+          std::cout << "File Shard less than defined size in MR Spec. Combining it with previus shard." << std::endl;
+        }
       
         break;
       }
        else 
         myfile.ignore(LONG_MAX, '\n');
 
-      size_t chunkSize = (end - begin);
-      std::cout << "Process offset (" << begin << "," << end << ") "
-                << chunkSize/1024 << " KBs into shard ...\n";
+     if(previousShardSize == mr_spec.mapSize * 1024.0) {
+          FileShard temp;
+          size_t chunkSize = (end - begin);
+          temp.shardsMap[input] = make_pair(begin, end);
+          temp.totalShardSize = chunkSize;
+          previousShardSize = chunkSize;
+
+       //   std::cout << "previousShard size ::" << previousShardSize << std::endl;
+          fileShards.push_back(std::move(temp));
       
-      FileShard temp;
-      temp.shardsMap[input] = make_pair(begin, end);
-      fileShards.push_back(std::move(temp));
+          std::cout << "Process offset (" << begin << "," << end << ") "
+                << chunkSize/1024 << " KBs into shard ...\n";
+
+        }
+        else
+        {
+          FileShard previousShard = fileShards.back();
+          previousShard.shardsMap[input] = make_pair(begin, end);
+          size_t chunkSize = (end - begin);
+          previousShard.totalShardSize = previousShard.totalShardSize + chunkSize;
+          previousShardSize = previousShard.totalShardSize ;
+          fileShards.pop_back();
+          fileShards.push_back(previousShard);
+          //std::cout << "previousShardSize after update :: " << previousShardSize << std:: endl;
+          std::cout << "Process offset (" << begin << "," << end << ") "
+                << chunkSize/1024 << " KBs into shard ...\n";
+          std::cout << "File Shard less than defined size in MR Spec. Combining it with previous shard." << std::endl;
+        }
+      
       offset = static_cast<int>(end) + 1;
     }  
     myfile.close();
   }
+  //  std::cout << "file shard vecror size :: " << fileShards.size() << std::endl; 
+
+  // for(int i =0; i< fileShards.size(); i++)
+  // {
+  //   std::cout << "file shard vector: " << fileShards[i].totalShardSize << std::endl;
+  // }
 
   return true;
 }
