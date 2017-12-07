@@ -38,7 +38,10 @@
 ### Handling Stragglers and failed workers:
 
 - A failed worker will fail by giving a response. So it has nothing else to process. So based on the status of the grpc call we identify the failed worker and mark the worker back to idle.
-- A straggler is identified by setting a timeout. We do not disturb the processing of the straggler. If the worker eventually responds, the worker is identified by checking that the piece of request the worker processed has already been completed by another worker and hence the reply by the straggler is discarded and the worker is set back to idle for reuse.
+- Keeping track of stragglers is a difficult task especially when the calls are asynchronous. What we are doing is simplifying this task by keeping the computation light. Every map or reduce task that has to be assigned to a worker has a vector of stragglers associated with it. A worker's IP is added to that vector once the request times out.
+- Once we get a response from one of these stragglers in this vector, we mark all of them as idle.
+- Why are we doing this? We feel it does not lead to any incorrect behavior as the requests will just be added to the straggler's queue asynchronously. Also it takes more memory to keep track of all the stragglers along with what task they are assigned to when they time out.
+- We are also assuming it is a rare scenario where more than one worker straggles on a single task. Hence this design decision.
 
 ### Sorting the keys:
 
