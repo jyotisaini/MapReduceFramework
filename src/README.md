@@ -22,9 +22,18 @@
 - The master keeps track of all the file locations where the workers are writing data to and also keeps track of the states of each task assigned to a worker and takes differet actions based on this data.
 - The master decides on the number of reduce tasks based on the required number of output files and number of keys that are to be processed.
 
-### Sharding:
-
 ### MR Spec:
+- This is the strcuture populated by framework.
+- In this helper function we read from the config files provided and populate the structure.
+- We also validate the structure like valid input file paths, proper IP addresses, total worker count and no of IP addresses passed etc.
+- This structure is finally passed to the master. Master uses this structure to shard files and run map-reduce tasks.
+
+### Sharding:
+- Input Files are iteratively read from the populated structure mrSpec.
+- Each shard is  map<filename, <start,end>> where <start , end> are the stream::pos to read bytes from the filename. We maintain vector of such shards.
+- For each file, we read the file in mrSpec.mapSize chunk. If file chunk we read has size less than the mrSpec.mapSize, we read (mrSpec.mapSize-chunk) size from next file and combine these two into one shard.
+- We read all files in similar fashion and return vector of shards to framework.
+- Framework passes this shard information to master which then use to assign files to map tasks.
 
 ### Handling Stragglers and failed workers:
 
