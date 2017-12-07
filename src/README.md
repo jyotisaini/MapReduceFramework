@@ -24,7 +24,7 @@
 
 ### MR Spec:
 - This is the strcuture populated by framework.
-- In this helper function we read from the config files provided and populate the structure.
+- In this helper function we read from the config file provided and populate the structure.
 - We also validate the structure like valid input file paths, proper IP addresses, total worker count and no of IP addresses passed etc.
 - This structure is finally passed to the master. Master uses this structure to shard files and run map-reduce tasks.
 
