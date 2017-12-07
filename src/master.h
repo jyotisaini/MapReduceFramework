@@ -250,6 +250,8 @@ bool Master::run() {
 						int stragglerIndex = getWorkerIndexOfWorker(straggler);
 						workerBookKeep_[stragglerIndex].status = IDLE;
 					}
+
+					replyVector -> shard -> stragglers.clear();
 					
 	          		continue;
 				}
@@ -430,6 +432,8 @@ bool Master::run() {
 						int stragglerIndex = getWorkerIndexOfWorker(straggler);
 						workerBookKeep_[stragglerIndex].status = IDLE;
 					}
+
+					replyVector -> task -> stragglers.clear();
 					
 					continue;
 				}
