@@ -52,6 +52,7 @@ class Master {
 			std::string workerID;
 			masterworker::MasterQuery query;
 			shardProgress progress;
+			std::vector<std::string> stragglers;
 			
 		} ShardStatus;
 
@@ -59,6 +60,7 @@ class Master {
 			masterworker::MasterQuery query;
 			std::string workerID;
 			shardProgress progress;
+			std::vector<std::string> stragglers;
 		}ReducerTask;
 
 		typedef struct ReplyBookKeep {
@@ -192,8 +194,8 @@ bool Master::run() {
 
 			grpc::ClientContext clientContext;
      
-      // set deadline for the clientContext
-      clientContext.set_deadline(getDeadline());
+			// set deadline for the clientContext
+			clientContext.set_deadline(getDeadline());
 
 			ShardStatus* currentProcessingShard = &shardBookKeep_[shardIndex];
 			WorkerState* currentWorker = &workerBookKeep_[workerIndex];
@@ -231,24 +233,29 @@ bool Master::run() {
 			statusList[i] =status;
 			GPR_ASSERT(statusList[i]);
 
-		  ReplyBookKeep* replyVector = (ReplyBookKeep*) tag;
+			ReplyBookKeep* replyVector = (ReplyBookKeep*) tag;
 
-      std::string workerIP = replyVector -> shard -> workerID;
-      int workerIndex = getWorkerIndexOfWorker(workerIP);
+			std::string workerIP = replyVector -> shard -> workerID;
+			int workerIndex = getWorkerIndexOfWorker(workerIP);
 
-      const grpc::Status& returnStatus = rpcStatus[workerIndex];
+			const grpc::Status& returnStatus = rpcStatus[workerIndex];
 
 			if(status) {
 				std::cout << "Received Reply from Worker " << std::endl;
 
         // if Shard has already been processed, mean the response is from straggling worker - ignore it. and mark server status as IDLE.
 				if(replyVector -> shard -> progress==COMPLETED) {
-          workerBookKeep_[workerIndex].status = IDLE;
-          continue;
-        }
 
-        replyVector -> shard -> progress=COMPLETED;
-				
+					for (auto &straggler: replyVector -> shard -> stragglers) {
+						int stragglerIndex = getWorkerIndexOfWorker(straggler);
+						workerBookKeep_[stragglerIndex].status = IDLE;
+					}
+					
+	          		continue;
+				}
+
+				replyVector -> shard -> progress=COMPLETED;
+					
 				workerBookKeep_[workerIndex].status = COMPLETE;
 
 				std::string dirPath = replyVector -> reply.directory();
@@ -260,7 +267,7 @@ bool Master::run() {
 						std::string file (ent -> d_name);
 						if (file.compare (".") == 0 || file.compare("..") == 0)
 							continue;
-						
+							
 						std::string key = file.substr(0, file.length() - 4);
 
 						// std::cout << "key processed: " << key << std::endl;
@@ -274,21 +281,18 @@ bool Master::run() {
 
 				workerBookKeep_[workerIndex].status = IDLE;	
 
-			} 
-      else 
-      {
+			} else {
 
-        if(returnStatus.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ) {
-          // mark shard as PENDING
-          replyVector -> shard -> progress = PENDING;
-        }
+				if(returnStatus.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ) {
+					// mark shard as PENDING
+						replyVector -> shard -> progress = PENDING;
+						replyVector -> shard -> stragglers.push_back(replyVector -> shard -> workerID);
 
-        else
-        {
-          // mark worker as IDLE
-          replyVector -> shard -> progress = PENDING;
-          workerBookKeep_[workerIndex].status = IDLE;
-        }
+				} else {
+					// mark worker as IDLE
+					replyVector -> shard -> progress = PENDING;
+					workerBookKeep_[workerIndex].status = IDLE;
+				}
 				
 			}
 			
@@ -378,8 +382,8 @@ bool Master::run() {
 
 				grpc::ClientContext clientContext ;
      
-        // set deadline for the clientContext
-        clientContext.set_deadline(getDeadline());
+				// set deadline for the clientContext
+				clientContext.set_deadline(getDeadline());
 
 				currentReducerTask -> workerID = currentWorker -> workerID;
 				currentReducerTask -> progress = PROCESSING;
@@ -407,12 +411,12 @@ bool Master::run() {
 				GPR_ASSERT(cq.Next(&tag, &status));
 				statusList[i] =status;
 				GPR_ASSERT(statusList[i]);
-			  ReplyBookKeep* replyVector = (ReplyBookKeep*) tag;
+				ReplyBookKeep* replyVector = (ReplyBookKeep*) tag;
 
-        std::string workerIP = replyVector -> task -> workerID;
-        int workerIndex = getWorkerIndexOfWorker(workerIP);
+				std::string workerIP = replyVector -> task -> workerID;
+				int workerIndex = getWorkerIndexOfWorker(workerIP);
 
-        const grpc::Status& returnStatus = rpcStatus[workerIndex];
+				const grpc::Status& returnStatus = rpcStatus[workerIndex];
 
 
 
@@ -421,42 +425,44 @@ bool Master::run() {
 					
           //if the status of reducer task is already completed, means this is response from straggling reducer. ignore response. mark reducer as IDLE.
 
-          if(replyVector -> task -> progress==COMPLETED){
-            workerBookKeep_[workerIndex].status = IDLE;
-            continue;
-          }
-
-					replyVector -> task -> progress=COMPLETED;
-					workerBookKeep_[workerIndex].status = COMPLETE;
-
-					std::string dirPath = replyVector -> reply.directory();
-					std::cout << "reply received: " << dirPath << std::endl;
+				if(replyVector -> task -> progress==COMPLETED){
+					for (auto &straggler : replyVector -> task -> stragglers) {
+						int stragglerIndex = getWorkerIndexOfWorker(straggler);
+						workerBookKeep_[stragglerIndex].status = IDLE;
+					}
 					
-          
+					continue;
+				}
+
+				replyVector -> task -> progress=COMPLETED;
+				workerBookKeep_[workerIndex].status = COMPLETE;
+
+				std::string dirPath = replyVector -> reply.directory();
+				std::cout << "reply received: " << dirPath << std::endl;
+				
+      
+				workerBookKeep_[workerIndex].status = IDLE;
+
+			} else {
+
+				if(returnStatus.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED){
+					replyVector -> task -> progress=PENDING;
+					replyVector -> task -> stragglers.push_back(replyVector -> task -> workerID);
+
+				} else {
+					replyVector -> task -> progress=PENDING;
 					workerBookKeep_[workerIndex].status = IDLE;
 
-				} 
-        else {
+				}
 
-          if(returnStatus.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED){
-            replyVector -> task -> progress=PENDING;
-
-          }
-          else
-          {
-            replyVector -> task -> progress=PENDING;
-            workerBookKeep_[workerIndex].status = IDLE;
-
-          }
-
-				}	
-			}
-
-			if(allTasksProcessed())
-				break;
-		} else if (reduceDone) {
-			break;
+			}	
 		}
+
+		if(allTasksProcessed())
+			break;
+	} else if (reduceDone) {
+		break;
+	}
 
 			
 
