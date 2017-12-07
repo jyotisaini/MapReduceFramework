@@ -11,17 +11,15 @@ message TempFiles { string filename = 1; }
 message WorkerReply {
   repeated TempFiles tempFiles = 1;
   string directory = 2;
-  bool isDone = 3;
 }
 
 message MasterQuery {
   repeated ShardInfo shard = 1;
   int32 outputNum = 2;
-  string location = 3;
-  bool isMap = 4;
-  string userId = 5;
-  string workerId = 6;
-  repeated TempFiles keyFiles = 7;
+  bool isMap = 3;
+  string userId = 4;
+  string workerId = 5;
+  repeated TempFiles keyFiles = 6;
 }
 
 message ShardInfo {
